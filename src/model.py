@@ -5,7 +5,7 @@ from src.parse_data import get_parsed_data
 
 torch.manual_seed(1234)
 
-BATCH_SIZE = 64
+BATCH_SIZE = 16
 EPOCHS = 100
 INPUT_DIM = 90
 HIDDEN_LAYER_1 = 64
@@ -41,8 +41,70 @@ def split_data_to_train_validation_test(data_array, val_percentage, test_percent
     return train_set, val_set, test_set
 
 
-def train_model():
-    pass
+def jensen_shannon_divergence(y_true,y_pred):
+    avg_y = (y_true+ y_pred)/2.0
+    jsd = 0.5 * kl_divergence(y_true,avg_y) + 0.5* kl_divergence(y_pred,avg_y)
+    return jsd
+
+
+def kl_divergence(p, q):
+    return np.sum(np.where(p != 0, p * np.log(p / q), 0))
+
+
+def calculate_top_k_prob(array,k=5):
+    vec_sort = np.sort(array)[-1::-1]
+    topk = vec_sort[:k]
+    ary = np.arange(k)
+    return np.prod([np.exp(topk[i]) / np.sum(np.exp(topk[i:])) for i in ary])
+
+
+def listnet_loss(true_array,pred_array,k=5):
+    loss = - np.sum(calculate_top_k_prob(true_array,k)* np.log(calculate_top_k_prob(pred_array, k)))
+    return loss
+
+
+def train_model(train_x_data,train_y_data,val_x_data,val_y_data):
+    model=ListNet(INPUT_DIM,HIDDEN_LAYER_1,HIDDEN_LAYER_2)
+    criterion = listnet_loss
+    optimizer = torch.optim.SGD(model.parameters())
+    train_loss_list=[]
+    validation_loss_list = []
+    train_acc =[]
+    validation_acc = []
+    for epoch in range(EPOCHS):
+        print(f"start epoch {epoch+1}")
+        train_size=len(train_x_data)
+        val_size = len(val_x_data)
+        suffle_train=np.random.permutation(train_size)
+        suffle_val=np.random.permutation(val_size)
+        train_loss = 0
+        for i in range(0,train_size,BATCH_SIZE):
+            try:
+                x=torch.tensor(np.asarray(train_x_data[suffle_train[i:i+BATCH_SIZE]]))
+                y_true=torch.tensor(np.asarray(train_y_data[suffle_train[i:i+BATCH_SIZE]]))
+                y_pred = model(x)
+                loss = criterion(y_true, y_pred)
+                train_loss += loss*len(y_true)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+            except:
+                pass
+        val_loss=0
+        for i in range(0,val_size,BATCH_SIZE):
+            try:
+                x = torch.tensor(np.asarray(train_x_data[suffle_val[i:i + BATCH_SIZE]]))
+                y_true = torch.tensor(np.asarray(train_y_data[suffle_val[i:i + BATCH_SIZE]]))
+                y_pred = model(x)
+                loss = criterion(y_true,y_pred)
+                val_loss+=loss*len(x)
+
+            except:
+                pass
+        train_loss_list.append(train_loss/train_size)
+        validation_loss_list.append(val_loss/val_size)
+        print(f"epoch {epoch+1} : train loss - {train_loss/train_size}, val loss - {val_loss/val_size}")
+
 
 
 def predict():
